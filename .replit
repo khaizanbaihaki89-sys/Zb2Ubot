@@ -1,0 +1,27 @@
+modules = ["python-3.11"]
+
+[deployment]
+router = "application"
+deploymentTarget = "reserved-vm"
+
+[workflows]
+runButton = "IBEKS"
+
+[[workflows.workflow]]
+name = "IBEKS"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python3 main.py"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[nix]
+channel = "stable-25_05"
+packages = ["ffmpeg", "freetype", "lcms2", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "tcl", "tk", "zlib"]
+
+[userenv.shared]
+OWNER_ID = "8823165964"

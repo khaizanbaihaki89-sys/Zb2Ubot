@@ -1,0 +1,18 @@
+[project]
+name = "repl-nix-workspace"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.10"
+dependencies = [
+    "psutil==5.9.8",
+    "numpy>=1.24.0",
+    "pyrogram==2.0.106",
+    "pytgcalls>=3.0.0.dev24",
+    "python-dotenv==1.0.1",
+    "tgcrypto==1.2.5",
+    "pillow==10.4.0",
+    "qrcode==7.4.2",
+    "python-barcode==0.15.1",
+    "yt-dlp>=2025.1.0",
+    "google-genai>=2.0.0",
+]
