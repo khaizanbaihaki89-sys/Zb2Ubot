@@ -1,16 +1,22 @@
 {
   "name": "zhen",
   "slug": "zhen",
-  "voice_id": "dbe22f890f544ae3b27f8ddea31447e1",
-  "created_at": "2026-09-03T21:23:44.832593+00:00",
-  "updated_at": "2026-09-04T10:10:16.693899+00:00",
-  "total_duration": 14.78,
+  "voice_id": "71311994cdf6481d83ef9cf5a7c04446",
+  "created_at": "2026-09-07T19:13:25.547453+00:00",
+  "updated_at": "2026-09-07T19:16:36.632598+00:00",
+  "total_duration": 29.56,
   "samples": [
     {
       "id": 1,
       "filename": "sample_1.wav",
       "duration": 14.78,
-      "added_at": "2026-09-03T21:23:44.832593+00:00"
+      "added_at": "2026-09-07T19:13:25.547453+00:00"
+    },
+    {
+      "id": 2,
+      "filename": "sample_2.wav",
+      "duration": 14.78,
+      "added_at": "2026-09-07T19:14:37.127373+00:00"
     }
   ]
 }

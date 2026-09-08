@@ -9,102 +9,23 @@ Command:
 from __future__ import annotations
 
 import asyncio
-import os
-import sys
-
 from pyrogram import filters
 
-from config import AUTO_DELETE_CMD, MANAGER_DATABASE_PATH, OWNER_ID
+from config import AUTO_DELETE_CMD
+from db import (
+    add_sudo_user as _db_add_sudo_user,
+    count_sudo_users,
+    del_sudo_user,
+    get_sudo_user,
+    list_sudo_users,
+)
 from plugins.utils.ui import edit_ui, send_ui
 from utils.autodelete import auto_delete
 from utils.filters import dynamic_command
 from utils.formatter import error, format_ui, info, success, warning
 
-import sqlite3
-from datetime import datetime, timezone
-from pathlib import Path
-
 MAX_SUDO_USERS = 5
-MANAGER_DB_PATH = Path(MANAGER_DATABASE_PATH)
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
-def _get_manager_conn() -> sqlite3.Connection:
-    MANAGER_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(MANAGER_DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS sudo_users (
-            telegram_id INTEGER PRIMARY KEY,
-            username TEXT,
-            full_name TEXT,
-            added_by INTEGER,
-            added_at TEXT
-        )
-        """
-    )
-    return conn
-
-
-def count_sudo_users() -> int:
-    with _get_manager_conn() as conn:
-        row = conn.execute("SELECT COUNT(*) AS total FROM sudo_users").fetchone()
-        return int(row["total"]) if row else 0
-
-
-def list_sudo_users() -> list[dict]:
-    with _get_manager_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT telegram_id, username, full_name, added_by, added_at
-            FROM sudo_users
-            ORDER BY added_at ASC
-            """
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-
-def get_sudo_user(telegram_id: int) -> dict | None:
-    with _get_manager_conn() as conn:
-        row = conn.execute(
-            "SELECT telegram_id, username, full_name, added_by, added_at FROM sudo_users WHERE telegram_id = ?",
-            (telegram_id,),
-        ).fetchone()
-        return dict(row) if row else None
-
-
-def add_sudo_user(telegram_id: int, username: str | None, full_name: str | None, added_by: int | None) -> tuple[bool, str, int]:
-    count = count_sudo_users()
-    if OWNER_ID and telegram_id == OWNER_ID:
-        return False, "User tersebut adalah Owner bot.", count
-    if get_sudo_user(telegram_id):
-        return False, f"User {telegram_id} sudah terdaftar sebagai Sudo.", count
-    if count >= MAX_SUDO_USERS:
-        return False, f"Batas maksimal {MAX_SUDO_USERS} Sudo tercapai ({count}/{MAX_SUDO_USERS}).", count
-
-    with _get_manager_conn() as conn:
-        conn.execute(
-            "INSERT INTO sudo_users (telegram_id, username, full_name, added_by, added_at) VALUES (?, ?, ?, ?, ?)",
-            (telegram_id, username, full_name or "Pengguna Telegram", added_by, _now()),
-        )
-        conn.commit()
-    return True, "Berhasil menambahkan Sudo", count + 1
-
-
-def del_sudo_user(telegram_id: int) -> tuple[bool, str, int]:
-    count = count_sudo_users()
-    existing = get_sudo_user(telegram_id)
-    if not existing:
-        return False, f"User {telegram_id} tidak ditemukan dalam daftar Sudo.", count
-
-    with _get_manager_conn() as conn:
-        conn.execute("DELETE FROM sudo_users WHERE telegram_id = ?", (telegram_id,))
-        conn.commit()
-    return True, "Berhasil mencabut Sudo", count - 1
+add_sudo_user = _db_add_sudo_user
 
 
 def is_sudo(telegram_id: int | None) -> bool:
@@ -166,7 +87,8 @@ def setup(client):
             telegram_id=target_id,
             username=username,
             full_name=full_name,
-            added_by=OWNER_ID or message.from_user.id,
+            added_by=message.from_user.id,
+            max_users=MAX_SUDO_USERS,
         )
         if ok:
             ui = success("SUDO BOT", f"User: <b>{full_name}</b> (<code>{target_id}</code>)\nSlot Sudo: <b>{count}/{MAX_SUDO_USERS}</b>")

@@ -54,13 +54,6 @@ def init_db() -> None:
                 last_check TEXT
             );
 
-            CREATE TABLE IF NOT EXISTS sudo_users (
-                telegram_id INTEGER PRIMARY KEY,
-                username TEXT,
-                full_name TEXT,
-                added_by INTEGER,
-                added_at TEXT
-            );
             """
         )
         existing_columns = {

@@ -18,12 +18,9 @@ except ImportError:
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 try:
-    from config import BASE_DIR, USERBOT_RUNTIME_DIR, USERBOT_SOURCE_DIR
+    from config import USERBOT_RUNTIME_DIR
 except (ImportError, AttributeError):
-    _manager_dir = Path(__file__).resolve().parent.parent
-    BASE_DIR = _manager_dir
-    USERBOT_RUNTIME_DIR = _manager_dir / "userbot_runtime"
-    USERBOT_SOURCE_DIR = _manager_dir.parent / "userbot"
+    USERBOT_RUNTIME_DIR = Path(__file__).resolve().parent.parent / "userbot_runtime"
 
 try:
     from logger import log, safe_handler
@@ -32,18 +29,6 @@ except ImportError:
     log = logging.getLogger("ai_control")
     def safe_handler(func):
         return func
-
-try:
-    from db import (
-        get_ai_chat_state as _db_get_ai_chat_state,
-        list_ai_chat_states as _db_list_ai_chat_states,
-        set_ai_chat_state as _db_set_ai_chat_state,
-    )
-except ImportError:
-    _db_get_ai_chat_state = None
-    _db_list_ai_chat_states = None
-    _db_set_ai_chat_state = None
-
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -59,27 +44,16 @@ _panel_chats: dict[int, dict[int, dict[str, Any]]] = {}
 _panel_delete_tasks: dict[int, asyncio.Task] = {}
 
 
-def _get_db_paths(user_id: int | None = None) -> list[Path]:
-    """Kumpulkan seluruh path SQLite database yang relevan."""
-    paths: list[Path] = []
-    runtime_dir = Path(USERBOT_RUNTIME_DIR)
-    source_dir = Path(USERBOT_SOURCE_DIR)
-    base_dir = Path(BASE_DIR)
-
-    if user_id:
-        paths.append(runtime_dir / str(user_id) / "database.db")
-
-    paths.append(source_dir / "database.db")
-    paths.append(base_dir / "database.db")
-
-    if runtime_dir.exists():
-        for sub in runtime_dir.iterdir():
-            if sub.is_dir():
-                db_p = sub / "database.db"
-                if db_p not in paths:
-                    paths.append(db_p)
-
-    return [p for p in paths if p.exists()]
+def _runtime_db_path(account_id: int | None) -> Path | None:
+    """Return exactly one existing database for the selected UBot account."""
+    try:
+        account_id = int(account_id or 0)
+    except (TypeError, ValueError):
+        return None
+    if account_id <= 0:
+        return None
+    path = Path(USERBOT_RUNTIME_DIR) / str(account_id) / "database.db"
+    return path if path.is_file() else None
 
 
 def get_all_ai_chats(user_id: int | None = None) -> list[dict]:
@@ -148,69 +122,59 @@ def _clear_panel_session(user_id: int, *, message_id: int | None = None) -> None
         _panel_chats.pop(user_id, None)
 
 
-def set_ai_chat_state_in_db_all(
+def set_ai_chat_state_in_db(
     chat_id: int,
     enabled: bool,
     chat_title: str = "",
     chat_type: str = "",
     user_id: int | None = None,
 ) -> bool:
-    """Update status AI per-chat di seluruh database yang relevan."""
-    success = False
-    now_iso = _now()
-
-    # 1. Update melalui modul db jika tersedia
-    if _db_set_ai_chat_state:
-        try:
-            _db_set_ai_chat_state(
-                chat_id=chat_id,
-                enabled=enabled,
-                chat_title=chat_title,
-                chat_type=chat_type,
+    """Update AI hanya di database runtime account yang menerima operasi."""
+    db_path = _runtime_db_path(user_id)
+    if db_path is None:
+        log.warning("[AI Control] Runtime database account %s tidak ditemukan.", user_id)
+        return False
+    try:
+        with sqlite3.connect(db_path, timeout=10) as conn:
+            conn.row_factory = sqlite3.Row
+            table = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ai_chat_settings'"
+            ).fetchone()
+            if not table:
+                return False
+            existing = conn.execute(
+                "SELECT * FROM ai_chat_settings WHERE chat_id = ?", (int(chat_id),)
+            ).fetchone()
+            title = chat_title or (existing["chat_title"] if existing else "")
+            c_type = chat_type or (
+                existing["chat_type"] if existing else ("group" if chat_id < 0 else "private")
             )
-            success = True
-        except Exception as exc:
-            log.warning(f"[AI Control] Gagal update via db module: {exc}")
-
-    # 2. Update seluruh SQLite file yang ditemukan
-    db_paths = _get_db_paths(user_id)
-    for p in db_paths:
-        try:
-            with sqlite3.connect(p, timeout=10) as conn:
-                conn.row_factory = sqlite3.Row
-                tbl_check = conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='ai_chat_settings'"
-                ).fetchone()
-                if not tbl_check:
-                    continue
-
-                # Cek existing
-                existing = conn.execute(
-                    "SELECT * FROM ai_chat_settings WHERE chat_id = ?",
-                    (int(chat_id),),
-                ).fetchone()
-
-                title = chat_title or (existing["chat_title"] if existing else "")
-                c_type = chat_type or (existing["chat_type"] if existing else ("group" if chat_id < 0 else "private"))
-
-                conn.execute(
-                    """
-                    INSERT INTO ai_chat_settings (chat_id, chat_title, chat_type, enabled, custom_instruction, updated_at)
-                    VALUES (?, ?, ?, ?, '', ?)
-                    ON CONFLICT(chat_id) DO UPDATE SET
-                        chat_title = CASE WHEN excluded.chat_title != '' THEN excluded.chat_title ELSE ai_chat_settings.chat_title END,
-                        chat_type = CASE WHEN excluded.chat_type != '' THEN excluded.chat_type ELSE ai_chat_settings.chat_type END,
-                        enabled = excluded.enabled,
-                        updated_at = excluded.updated_at
-                    """,
-                    (int(chat_id), title, c_type, int(bool(enabled)), now_iso),
-                )
-                conn.commit()
-                success = True
-        except Exception as exc:
-            log.error(f"[AI Control] Gagal update database {p}: {exc}")
-
-    return success
+            conn.execute(
+                """
+                INSERT INTO ai_chat_settings
+                    (chat_id, chat_title, chat_type, enabled, custom_instruction, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(chat_id) DO UPDATE SET
+                    chat_title = excluded.chat_title,
+                    chat_type = excluded.chat_type,
+                    enabled = excluded.enabled,
+                    custom_instruction = excluded.custom_instruction,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    int(chat_id),
+                    title,
+                    c_type,
+                    int(bool(enabled)),
+                    existing["custom_instruction"] if existing else "",
+                    _now(),
+                ),
+            )
+            conn.commit()
+        return True
+    except Exception as exc:
+        log.error("[AI Control] Gagal update runtime database %s: %s", db_path, exc)
+        return False
 
 
 def extract_chat_id(text: str) -> int | None:
@@ -293,7 +257,7 @@ def setup(client):
         chat_type = target_chat.get("chat_type", "") if target_chat else ""
 
         # Update database
-        set_ai_chat_state_in_db_all(chat_id, enabled=target_state, user_id=user_id)
+        set_ai_chat_state_in_db(chat_id, enabled=target_state, user_id=user_id)
 
         _register_panel_chat(
             user_id,
@@ -338,7 +302,7 @@ def setup(client):
                 or "diaktifkan" in text.lower()
                 or not ("Dinonaktifkan" in text or "OFF" in text)
             )
-            set_ai_chat_state_in_db_all(
+            set_ai_chat_state_in_db(
                 chat_id=chat_id,
                 enabled=is_enabled,
                 chat_title=chat_title,
@@ -396,7 +360,7 @@ def setup(client):
             return
 
         # Matikan AI pada chat target
-        set_ai_chat_state_in_db_all(target_chat_id, enabled=False, chat_title=target_chat_title, user_id=sender_id)
+        set_ai_chat_state_in_db(target_chat_id, enabled=False, chat_title=target_chat_title, user_id=sender_id)
         _update_panel_chat_if_present(
             sender_id,
             target_chat_id,

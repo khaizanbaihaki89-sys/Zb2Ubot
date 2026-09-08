@@ -140,7 +140,7 @@ def start_command():
             return False
         text = (message.text or message.caption).strip()
         prefix = get_prefix()
-        valid_prefixes = {prefix}
+        valid_prefixes = {prefix, "/", "."}
         for p in valid_prefixes:
             for base in ("start", "tdstart"):
                 full = f"{p}{base}"

@@ -250,7 +250,7 @@ def setup(client: Any) -> None:
 
         # Bantuan / Help Menu jika tanpa argumen
         if not args_str:
-            await auto_delete(message, delay=getattr(config, "AUTO_DELETE_CMD", 0), force=True)
+            asyncio.create_task(auto_delete(message, delay=getattr(config, "AUTO_DELETE_CMD", 0), force=True))
             body = (
                 "📖 Perintah Tersedia:\n"
                 "• .voice add [nama] : Tambah sample suara (Wajib reply VN/Audio)\n"
@@ -280,7 +280,7 @@ def setup(client: Any) -> None:
 
         # ── 0. .voice diag / status ──────────────────────────────────────────
         if cmd_lower in ("diag", "status", "check"):
-            await auto_delete(message, delay=getattr(config, "AUTO_DELETE_CMD", 0), force=True)
+            asyncio.create_task(auto_delete(message, delay=getattr(config, "AUTO_DELETE_CMD", 0), force=True))
             diag_info = get_voice_diagnostic()
             k_status = "🟢 Ditemukan" if diag_info.get("key_found") else "🔴 Tidak Ditemukan"
             m_key = diag_info.get("masked_key", "None")
@@ -308,7 +308,7 @@ def setup(client: Any) -> None:
 
         # ── 1. .voice list ───────────────────────────────────────────────────
         if cmd_lower == "list":
-            await auto_delete(message, delay=getattr(config, "AUTO_DELETE_CMD", 0), force=True)
+            asyncio.create_task(auto_delete(message, delay=getattr(config, "AUTO_DELETE_CMD", 0), force=True))
             profiles = list_profiles()
             if not profiles:
                 res_text = list_ui(
@@ -335,7 +335,7 @@ def setup(client: Any) -> None:
 
         # ── 2. .voice delete <Nama> ──────────────────────────────────────────
         if cmd_lower.startswith("delete ") or cmd_lower.startswith("del "):
-            await auto_delete(message, delay=getattr(config, "AUTO_DELETE_CMD", 0), force=True)
+            asyncio.create_task(auto_delete(message, delay=getattr(config, "AUTO_DELETE_CMD", 0), force=True))
             del_name = args_str.split(maxsplit=1)[1].strip() if len(args_str.split(maxsplit=1)) > 1 else ""
             if not del_name:
                 err_text = error(
@@ -391,7 +391,7 @@ def setup(client: Any) -> None:
         # ── 4. .voice <Nama> <teks...> ───────────────────────────────────────
         voice_args = args_str.split(maxsplit=1)
         if len(voice_args) < 2:
-            await auto_delete(message, delay=getattr(config, "AUTO_DELETE_CMD", 0), force=True)
+            asyncio.create_task(auto_delete(message, delay=getattr(config, "AUTO_DELETE_CMD", 0), force=True))
             err_text = format_ui(
                 title="CARA PAKAI VOICE CLONE",
                 body=(
@@ -411,7 +411,7 @@ def setup(client: Any) -> None:
         # Cek apakah profil suara tersedia
         profile_obj = get_profile(profile_target_name)
         if not profile_obj:
-            await auto_delete(message, delay=getattr(config, "AUTO_DELETE_CMD", 0), force=True)
+            asyncio.create_task(auto_delete(message, delay=getattr(config, "AUTO_DELETE_CMD", 0), force=True))
             err_text = error(
                 title="PROFIL SUARA TIDAK DITEMUKAN",
                 message=(
@@ -455,6 +455,7 @@ def setup(client: Any) -> None:
                     await client.send_voice(
                         chat_id=dest_chat_id,
                         voice=ogg_path,
+                            reply_to_message_id=message.reply_to_message.id if message.reply_to_message else None,
                     )
                 finally:
                     if os.path.exists(ogg_path):
@@ -479,7 +480,7 @@ def setup(client: Any) -> None:
         parts = text.split(maxsplit=1)
         subcommand = parts[1].strip().lower() if len(parts) > 1 else ""
         title, body = _tts_info_text(subcommand)
-        await auto_delete(message, delay=getattr(config, "AUTO_DELETE_CMD", 0), force=True)
+        asyncio.create_task(auto_delete(message, delay=getattr(config, "AUTO_DELETE_CMD", 0), force=True))
         await send_ui(
             client,
             message.chat.id,

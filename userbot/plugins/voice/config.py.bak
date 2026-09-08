@@ -22,71 +22,26 @@ __author__ = "IBEKS"
 FISH_API_KEY: str = os.environ.get("FISH_API_KEY", "").strip()
 
 # ── Paths & Data Directory ───────────────────────────────────────────────────
-# Setiap UserBot berjalan di runtime directory milik Telegram ID masing-masing.
-# Contoh:
-#   userbot_runtime/8823165964/data/voice/
-#
-# Dengan demikian profile Voice akun A tidak pernah dibaca oleh akun B.
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Cek root project atau userbot directory
 _USERBOT_DIR = os.path.dirname(os.path.dirname(_CURRENT_DIR))
 _WORKSPACE_ROOT = os.path.dirname(_USERBOT_DIR)
 
-try:
-    from config import BASE_DIR as _RUNTIME_BASE_DIR, OWNER_ID as _CONFIG_OWNER_ID
-except Exception:
-    _RUNTIME_BASE_DIR = os.environ.get("IBEKS_USERBOT_RUNTIME_DIR", _USERBOT_DIR)
-    try:
-        _CONFIG_OWNER_ID = int(os.environ.get("OWNER_ID", "0") or 0)
-    except Exception:
-        _CONFIG_OWNER_ID = 0
+# Prioritaskan data/voice di workspace root atau userbot/data/voice
+_CANDIDATE_DATA_DIRS = [
+    os.path.join(_WORKSPACE_ROOT, "data", "voice"),
+    os.path.join(_USERBOT_DIR, "data", "voice"),
+]
+DATA_VOICE_DIR = _CANDIDATE_DATA_DIRS[0]
+for d in _CANDIDATE_DATA_DIRS:
+    if os.path.exists(d):
+        DATA_VOICE_DIR = d
+        break
 
-# ID akun aktif diambil dari nama runtime directory.
-_RUNTIME_ACCOUNT_ID = 0
-try:
-    _runtime_name = os.path.basename(os.path.normpath(_RUNTIME_BASE_DIR))
-    if _runtime_name.isdigit():
-        _RUNTIME_ACCOUNT_ID = int(_runtime_name)
-except Exception:
-    _RUNTIME_ACCOUNT_ID = 0
-
-DATA_VOICE_DIR = os.path.join(_RUNTIME_BASE_DIR, "data", "voice")
 os.makedirs(DATA_VOICE_DIR, exist_ok=True)
-
 PROFILES_DIR: str = os.path.join(DATA_VOICE_DIR, "profiles")
 os.makedirs(PROFILES_DIR, exist_ok=True)
-
 SETTINGS_FILE: str = os.path.join(DATA_VOICE_DIR, "settings.json")
-
-# ── One-time migration untuk Owner ───────────────────────────────────────────
-# Profile Voice lama berada di workspace/data/voice. Jangan salin data tersebut
-# ke customer. Hanya runtime milik OWNER_ID yang boleh menerima migrasi.
-_LEGACY_DATA_VOICE_DIR = os.path.join(_WORKSPACE_ROOT, "data", "voice")
-_LEGACY_PROFILES_DIR = os.path.join(_LEGACY_DATA_VOICE_DIR, "profiles")
-_LEGACY_SETTINGS_FILE = os.path.join(_LEGACY_DATA_VOICE_DIR, "settings.json")
-
-if (
-    _RUNTIME_ACCOUNT_ID
-    and _CONFIG_OWNER_ID
-    and _RUNTIME_ACCOUNT_ID == int(_CONFIG_OWNER_ID)
-):
-    try:
-        import shutil
-
-        if os.path.isdir(_LEGACY_PROFILES_DIR):
-            for _entry in os.listdir(_LEGACY_PROFILES_DIR):
-                _src = os.path.join(_LEGACY_PROFILES_DIR, _entry)
-                _dst = os.path.join(PROFILES_DIR, _entry)
-
-                # Jangan menimpa profile Owner yang sudah ada di runtime.
-                if os.path.isdir(_src) and not os.path.exists(_dst):
-                    shutil.copytree(_src, _dst)
-
-        if os.path.isfile(_LEGACY_SETTINGS_FILE) and not os.path.exists(SETTINGS_FILE):
-            shutil.copy2(_LEGACY_SETTINGS_FILE, SETTINGS_FILE)
-
-    except Exception:
-        # Kegagalan migrasi tidak boleh menghentikan UserBot.
-        pass
 
 # ── Fish Audio Voice Clone & TTS Parameters ──────────────────────────────────
 FISH_AUDIO_BASE_URL: str = "https://api.fish.audio"

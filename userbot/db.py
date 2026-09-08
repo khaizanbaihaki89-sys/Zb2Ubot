@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from config import DATABASE_PATH
+from config import BASE_DIR, DATABASE_PATH
 
 
 _SETTINGS_COLUMNS = {
@@ -32,6 +32,16 @@ _SETTINGS_COLUMNS = {
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _active_account_id() -> int:
+    """Return the Telegram ID represented by this isolated runtime."""
+    runtime_name = Path(BASE_DIR).name
+    try:
+        account_id = int(runtime_name)
+    except (TypeError, ValueError):
+        return 0
+    return account_id if account_id > 0 else 0
 
 
 def get_conn() -> sqlite3.Connection:
@@ -121,6 +131,13 @@ def init_db() -> None:
                 enabled INTEGER NOT NULL DEFAULT 0,
                 custom_instruction TEXT DEFAULT '',
                 updated_at TEXT DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS sudo_users (
+                telegram_id INTEGER PRIMARY KEY,
+                username TEXT,
+                full_name TEXT,
+                added_by INTEGER,
+                added_at TEXT DEFAULT (datetime('now'))
             );
             CREATE TABLE IF NOT EXISTS truth_dare (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -523,6 +540,102 @@ def delete_ai_chat_state(chat_id: int) -> bool:
         return cursor.rowcount > 0
     finally:
         conn.close()
+
+
+def count_sudo_users() -> int:
+    """Hitung Sudo hanya di database runtime account aktif."""
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT COUNT(*) AS total FROM sudo_users").fetchone()
+        return int(row["total"]) if row else 0
+    finally:
+        conn.close()
+
+
+def list_sudo_users() -> list[dict]:
+    """Ambil daftar Sudo dari runtime account aktif."""
+    conn = get_conn()
+    try:
+        return [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT telegram_id, username, full_name, added_by, added_at
+                FROM sudo_users
+                ORDER BY added_at ASC
+                """
+            ).fetchall()
+        ]
+    finally:
+        conn.close()
+
+
+def get_sudo_user(telegram_id: int) -> dict | None:
+    """Cari Sudo hanya di runtime account aktif."""
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            """
+            SELECT telegram_id, username, full_name, added_by, added_at
+            FROM sudo_users
+            WHERE telegram_id = ?
+            """,
+            (int(telegram_id),),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def add_sudo_user(
+    telegram_id: int,
+    username: str | None,
+    full_name: str | None,
+    added_by: int | None,
+    max_users: int = 5,
+) -> tuple[bool, str, int]:
+    """Tambah Sudo ke runtime account aktif dengan batas per-account."""
+    current_count = count_sudo_users()
+    if get_sudo_user(telegram_id):
+        return False, f"User {telegram_id} sudah terdaftar sebagai Sudo.", current_count
+    if current_count >= max_users:
+        return False, f"Batas maksimal {max_users} Sudo tercapai ({current_count}/{max_users}).", current_count
+
+    conn = get_conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO sudo_users (telegram_id, username, full_name, added_by, added_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                int(telegram_id),
+                username,
+                full_name or "Pengguna Telegram",
+                added_by,
+                _now(),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return True, "Berhasil menambahkan Sudo", current_count + 1
+
+
+def del_sudo_user(telegram_id: int) -> tuple[bool, str, int]:
+    """Hapus Sudo dari runtime account aktif."""
+    current_count = count_sudo_users()
+    conn = get_conn()
+    try:
+        cursor = conn.execute(
+            "DELETE FROM sudo_users WHERE telegram_id = ?", (int(telegram_id),)
+        )
+        conn.commit()
+        if cursor.rowcount == 0:
+            return False, f"User {telegram_id} tidak ditemukan dalam daftar Sudo.", current_count
+    finally:
+        conn.close()
+    return True, "Berhasil mencabut Sudo", current_count - 1
 
 
 def add_td_item(category: str, text: str) -> int:
@@ -1020,18 +1133,14 @@ def set_rc_message(account_id: int, message: str) -> None:
 
 
 def get_ai_manual_style(owner_id: int | None = None) -> str | None:
-    """Ambil instruksi gaya manual AI dari database."""
+    """Ambil instruksi gaya manual dari row account aktif saja."""
+    account_id = int(owner_id) if owner_id is not None else _active_account_id()
+    ensure_user_settings(account_id)
     conn = get_conn()
     try:
-        if owner_id is not None:
-            row = conn.execute(
-                "SELECT ai_manual_style FROM settings WHERE telegram_id = ?",
-                (int(owner_id),),
-            ).fetchone()
-            if row and row["ai_manual_style"]:
-                return str(row["ai_manual_style"]).strip() or None
         row = conn.execute(
-            "SELECT ai_manual_style FROM settings WHERE ai_manual_style IS NOT NULL AND ai_manual_style != '' ORDER BY updated_at DESC LIMIT 1"
+            "SELECT ai_manual_style FROM settings WHERE telegram_id = ?",
+            (account_id,),
         ).fetchone()
         if row and row["ai_manual_style"]:
             return str(row["ai_manual_style"]).strip() or None
@@ -1043,46 +1152,30 @@ def get_ai_manual_style(owner_id: int | None = None) -> str | None:
 
 
 def set_ai_manual_style(prompt: str | None, owner_id: int | None = None) -> None:
-    """Simpan instruksi gaya manual AI ke database."""
+    """Simpan instruksi gaya manual hanya untuk account aktif."""
     val = str(prompt).strip() if prompt else ""
+    account_id = int(owner_id) if owner_id is not None else _active_account_id()
+    ensure_user_settings(account_id)
     conn = get_conn()
     try:
-        if owner_id is not None:
-            ensure_user_settings(int(owner_id))
-            conn.execute(
-                "UPDATE settings SET ai_manual_style = ?, updated_at = ? WHERE telegram_id = ?",
-                (val, _now(), int(owner_id)),
-            )
-        else:
-            rows = conn.execute("SELECT telegram_id FROM settings").fetchall()
-            if rows:
-                conn.execute(
-                    "UPDATE settings SET ai_manual_style = ?, updated_at = ?",
-                    (val, _now()),
-                )
-            else:
-                conn.execute(
-                    "INSERT INTO settings (telegram_id, prefix, ai_manual_style, updated_at) VALUES (0, '.', ?, ?)",
-                    (val, _now()),
-                )
+        conn.execute(
+            "UPDATE settings SET ai_manual_style = ?, updated_at = ? WHERE telegram_id = ?",
+            (val, _now(), account_id),
+        )
         conn.commit()
     finally:
         conn.close()
 
 
 def get_ai_learned_style(owner_id: int | None = None) -> str | None:
-    """Ambil profil gaya terpelajari AI (.aistyle learn) dari database."""
+    """Ambil profil gaya terpelajari dari row account aktif saja."""
+    account_id = int(owner_id) if owner_id is not None else _active_account_id()
+    ensure_user_settings(account_id)
     conn = get_conn()
     try:
-        if owner_id is not None:
-            row = conn.execute(
-                "SELECT ai_learned_style FROM settings WHERE telegram_id = ?",
-                (int(owner_id),),
-            ).fetchone()
-            if row and row["ai_learned_style"]:
-                return str(row["ai_learned_style"]).strip() or None
         row = conn.execute(
-            "SELECT ai_learned_style FROM settings WHERE ai_learned_style IS NOT NULL AND ai_learned_style != '' ORDER BY updated_at DESC LIMIT 1"
+            "SELECT ai_learned_style FROM settings WHERE telegram_id = ?",
+            (account_id,),
         ).fetchone()
         if row and row["ai_learned_style"]:
             return str(row["ai_learned_style"]).strip() or None
@@ -1094,28 +1187,16 @@ def get_ai_learned_style(owner_id: int | None = None) -> str | None:
 
 
 def set_ai_learned_style(prompt: str | None, owner_id: int | None = None) -> None:
-    """Simpan profil gaya terpelajari AI (.aistyle learn) ke database."""
+    """Simpan profil gaya terpelajari hanya untuk account aktif."""
     val = str(prompt).strip() if prompt else ""
+    account_id = int(owner_id) if owner_id is not None else _active_account_id()
+    ensure_user_settings(account_id)
     conn = get_conn()
     try:
-        if owner_id is not None:
-            ensure_user_settings(int(owner_id))
-            conn.execute(
-                "UPDATE settings SET ai_learned_style = ?, updated_at = ? WHERE telegram_id = ?",
-                (val, _now(), int(owner_id)),
-            )
-        else:
-            rows = conn.execute("SELECT telegram_id FROM settings").fetchall()
-            if rows:
-                conn.execute(
-                    "UPDATE settings SET ai_learned_style = ?, updated_at = ?",
-                    (val, _now()),
-                )
-            else:
-                conn.execute(
-                    "INSERT INTO settings (telegram_id, prefix, ai_learned_style, updated_at) VALUES (0, '.', ?, ?)",
-                    (val, _now()),
-                )
+        conn.execute(
+            "UPDATE settings SET ai_learned_style = ?, updated_at = ? WHERE telegram_id = ?",
+            (val, _now(), account_id),
+        )
         conn.commit()
     finally:
         conn.close()
