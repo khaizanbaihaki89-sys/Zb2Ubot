@@ -24,9 +24,9 @@ MAX_SUDO_USERS = 5
 def _runtime_db(account_id: int) -> Path:
     if account_id <= 0:
         raise ValueError("Account ID tidak valid.")
-    runtime_dir = Path(USERBOT_RUNTIME_DIR) / str(account_id)
-    runtime_dir.mkdir(parents=True, exist_ok=True)
-    db_path = runtime_dir / "database.db"
+    db_path = Path(USERBOT_RUNTIME_DIR) / str(account_id) / "database.db"
+    if not db_path.is_file():
+        raise ValueError(f"Runtime account `{account_id}` tidak ditemukan atau belum siap.")
     with sqlite3.connect(db_path) as connection:
         connection.execute(
             """
@@ -164,14 +164,16 @@ def setup(client):
         if account_err:
             await message.reply(account_err)
             return
-        target_id, username, full_name, err = await _resolve_target(_client, message)
+        target_id, username, full_name, err = await _resolve_target(
+            _client, message, argument_index=2
+        )
         if err:
             await message.reply(
                 f"⚠️ {err}\n\n"
                 "💡 <b>Contoh Penggunaan:</b>\n"
-                "• <code>.addsudo 123456789</code>\n"
-                "• <code>.addsudo @username</code>\n"
-                "• Reply pesan user lalu ketik <code>.addsudo</code>"
+                "• <code>.addsudo 8823165964 123456789</code>\n"
+                "• <code>.addsudo 8823165964 @username</code>\n"
+                "• Reply pesan user lalu ketik <code>.addsudo 8823165964</code>"
             )
             return
 
@@ -199,14 +201,16 @@ def setup(client):
         if account_err:
             await message.reply(account_err)
             return
-        target_id, username, full_name, err = await _resolve_target(_client, message)
+        target_id, username, full_name, err = await _resolve_target(
+            _client, message, argument_index=2
+        )
         if err:
             await message.reply(
                 f"⚠️ {err}\n\n"
                 "💡 <b>Contoh Penggunaan:</b>\n"
-                "• <code>.delsudo 123456789</code>\n"
-                "• <code>.delsudo @username</code>\n"
-                "• Reply pesan user lalu ketik <code>.delsudo</code>"
+                "• <code>.delsudo 8823165964 123456789</code>\n"
+                "• <code>.delsudo 8823165964 @username</code>\n"
+                "• Reply pesan user lalu ketik <code>.delsudo 8823165964</code>"
             )
             return
 
@@ -246,7 +250,10 @@ def setup(client):
 
         if not sudo_list:
             lines.append("<i>Belum ada user Sudo yang terdaftar.</i>")
-            lines.append(f"💡 Tambahkan dengan <code>.addsudo &lt;user&gt;</code> (Slot: 0/{MAX_SUDO_USERS})")
+            lines.append(
+                f"💡 Tambahkan dengan <code>.addsudo {account_id} &lt;user&gt;</code> "
+                f"(Slot: 0/{MAX_SUDO_USERS})"
+            )
         else:
             for idx, user in enumerate(sudo_list, 1):
                 name = user.get("full_name") or "Tidak diketahui"

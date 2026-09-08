@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from pyrogram import filters
 
-from config import AUTO_DELETE_CMD
+from config import AUTO_DELETE_CMD, OWNER_ID
 from db import (
     add_sudo_user as _db_add_sudo_user,
     count_sudo_users,
