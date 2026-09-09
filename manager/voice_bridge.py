@@ -91,6 +91,24 @@ def _response_paths() -> list[Path]:
     return sorted(USERBOT_RUNTIME_DIR.glob("*/.voice_response.json"))
 
 
+def _is_valid_user_id(user_id: int | str) -> bool:
+    """
+    Validasi bahwa user_id adalah user ID pribadi (positif).
+    Group/supergroup ID adalah negatif dan tidak dapat menerima pesan via send_message
+    ketika Pyrogram menggunakan in_memory=True.
+    
+    Return: True jika user_id valid, False jika grup/supergroup.
+    """
+    try:
+        uid = int(user_id)
+        # User ID pribadi adalah positif; group/supergroup adalah negatif
+        if uid <= 0:
+            return False
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
 def _keyboard(panel: VoicePanel) -> InlineKeyboardMarkup | None:
     if not panel.connected:
         return None
@@ -163,6 +181,16 @@ async def _send_panel(client, payload: dict) -> None:
     user_id = int(payload["user_id"])
     group_id = int(payload["group_chat_id"])
     success = bool(payload.get("success"))
+    
+    # PATCH: Validasi user_id adalah positif (user pribadi, bukan grup)
+    if not _is_valid_user_id(user_id):
+        log.warning(
+            "[Voice] Panel tidak dapat dikirim: user_id=%s bukan user ID pribadi "
+            "(mungkin menggunakan group_chat_id. Request dibatalkan.",
+            user_id,
+        )
+        return
+    
     session = (
         VoiceSession(
             chat_id=int(payload.get("chat_id") or group_id),
