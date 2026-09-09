@@ -80,6 +80,24 @@ def _read_request(path: Path) -> dict | None:
         return None
 
 
+def _is_valid_user_id(chat_id: int | str) -> bool:
+    """
+    Validasi bahwa chat_id adalah user ID pribadi (positif).
+    Chat ID grup/supergroup adalah negatif dan tidak dapat menerima pesan via send_message
+    ketika Pyrogram menggunakan in_memory=True (tidak ada persistent storage).
+    
+    Return: True jika chat_id valid untuk send_message, False jika grup/supergroup.
+    """
+    try:
+        cid = int(chat_id)
+        # User ID pribadi adalah positif; group/supergroup adalah negatif
+        if cid <= 0:
+            return False
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
 def _home_payload(context: HelpContext, page: int):
     catalog = scan_plugins(PLUGIN_ROOT)
     page = clamp_page(catalog, page)
@@ -132,6 +150,24 @@ async def _edit_help(
 async def _send_help(client, payload: dict) -> bool:
     bot = await client.get_me()
     chat_id = payload["chat_id"]
+    
+    # PATCH: Validasi chat_id adalah user ID pribadi (positif)
+    if not _is_valid_user_id(chat_id):
+        log.warning(
+            "[Help] Request tidak dapat dikirim: chat_id=%s bukan user ID pribadi "
+            "(mungkin grup/supergroup dengan ID negatif). Fallback ke user_id=%s.",
+            chat_id,
+            payload["user_id"],
+        )
+        chat_id = payload["user_id"]
+        # Double-check fallback juga valid
+        if not _is_valid_user_id(chat_id):
+            log.warning(
+                "[Help] Fallback user_id=%s juga tidak valid. Request dibatalkan.",
+                chat_id,
+            )
+            return False
+    
     if int(chat_id) == int(bot.id):
         # Telegram tidak mengizinkan bot mengirim pesan ke dirinya sendiri.
         # Ini terjadi jika Userbot menjalankan .help di private chat Manager.
