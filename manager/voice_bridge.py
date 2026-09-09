@@ -1,4 +1,4 @@
-"""Bridge Voice Chat: Userbot publica resultado, Manager hospeda o painel."""
+"""Bridge Voice Chat: Userbot memublikasikan hasil, Manager bot menghost panel."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ CALLBACK_FILTER = filters.regex(
 
 @dataclass
 class VoiceSession:
-    """Session Voice Chat aktif yang menjadi sumber semua aksi panel."""
+    """Sesi Voice Chat aktif yang menjadi sumber semua aksi panel."""
 
     chat_id: int
     group_id: int
@@ -75,7 +75,7 @@ def _read_payload(path: Path) -> dict | None:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError) as exc:
-        log.warning("[Voice] IPC inválido em %s: %s", path, exc)
+        log.warning("[Voice] IPC invalid dari %s: %s", path, exc)
         return None
 
 
@@ -186,7 +186,7 @@ async def _send_panel(client, payload: dict) -> None:
     if not _is_valid_user_id(user_id):
         log.warning(
             "[Voice] Panel tidak dapat dikirim: user_id=%s bukan user ID pribadi "
-            "(mungkin menggunakan group_chat_id. Request dibatalkan.",
+            "(mungkin menggunakan group_chat_id). Request dibatalkan.",
             user_id,
         )
         return
@@ -329,7 +329,7 @@ async def _watch_requests(client) -> None:
                     try:
                         await _send_panel(client, payload)
                     except Exception:
-                        log.exception("[Voice] Gagal enviar panel.")
+                        log.exception("[Voice] Gagal mengirim panel.")
 
                 for path in _response_paths():
                     payload = _read_payload(path)
@@ -339,9 +339,9 @@ async def _watch_requests(client) -> None:
                     try:
                         await _apply_response(client, payload)
                     except RPCError:
-                        log.warning("[Voice] Panel %s não pôde ser editado.", path)
+                        log.warning("[Voice] Panel %s tidak dapat diedit.", path)
                     except Exception:
-                        log.exception("[Voice] Gagal atualizar panel.")
+                        log.exception("[Voice] Gagal memperbarui panel.")
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -350,7 +350,7 @@ async def _watch_requests(client) -> None:
 
 
 def start_voice_bridge(client) -> None:
-    """Registra callbacks do Manager e inicia o watcher IPC Voice Chat."""
+    """Daftarkan callback Manager dan mulai watcher IPC Voice Chat."""
     global _watcher_task
     client.add_handler(CallbackQueryHandler(_handle_callback, CALLBACK_FILTER))
     if _watcher_task is None or _watcher_task.done():
